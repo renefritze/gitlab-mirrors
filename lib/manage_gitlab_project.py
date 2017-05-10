@@ -88,7 +88,7 @@ def transfer_project(src_project, group):
   dest_project = find_project(name=src_project.name)
   return dest_project
 
-def createproject(pname):
+def createproject(pname, found_group):
   if options.public:
      visibility_level="public"
   else:
@@ -107,16 +107,18 @@ def createproject(pname):
     'wiki_enabled': options.wiki,
     'snippets_enabled': options.snippets,
     'visibility': visibility_level,
-    'namespace_id': find_group(name=gitlab_namespace).id,
+    'namespace_id': found_group.id,
   }
   #make all project options lowercase boolean strings i.e. true instead of True
   for x in project_options.keys():
     project_options[x] = str(project_options[x]).lower()
-  printErr("Creating new project %s" % pname)
-  project_options['name'] = pname
   project_options['description'] = description
-  git.projects.create(project_options)
-  found_project = find_project(name=pname)
+  ns = '{}/{}'.format(found_group.full_path, project_name)
+  found_project = git.find_project(name=project_name, path_with_namespace=ns)
+  if found_project:
+    return found_project
+  git.add_project(pname, description=description,**project_options)
+  found_project = git.find_project(name=project_name, path_with_namespace=ns)
   if needs_transfer(gitlab_user, gitlab_namespace, found_project):
      found_project = transfer_project(found_project, found_group)
   return found_project
@@ -134,11 +136,11 @@ def needs_transfer(user, groupname, project):
     return project.namespace['name'] != namespace
 
 if options.create:
-  found_group = find_group(name=gitlab_namespace)
+  found_group=git.find_group(name=os.path.basename(gitlab_namespace), full_path=gitlab_namespace)
   found_project = None
 
   found_project= find_project(name=project_name)
-  #exit()
+  found_project=None
   if found_project:
     if needs_transfer(gitlab_user, gitlab_namespace, found_project):
       found_project = transfer_project(found_project, found_group)
@@ -146,7 +148,7 @@ if options.create:
         printErr("There was a problem transferring {group}/{project}.  Did you give {user} user Admin rights in gitlab?".format(group=gitlab_namespace,project=project_name,user=gitlab_user))
         exit(1)
   else:
-    found_project=createproject(project_name)
+    found_project=createproject(project_name, found_group)
     if not found_project:
       printErr("There was a problem creating {group}/{project}.  Did you give {user} user Admin rights in gitlab?".format(group=gitlab_namespace,project=project_name,user=gitlab_user))
       exit(1)
